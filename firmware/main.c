@@ -23,6 +23,7 @@
 #include "isp.h"
 #include "clock.h"
 #include "tpi.h"
+#include "tpi_defs.h"
 
 static uchar replyBuffer[8];
 
@@ -143,11 +144,25 @@ uchar usbFunctionSetup(uchar data[8]) {
 
 		clockWait(16);
 		tpi_init();
-
 	
 	} else if (data[1] == USBASP_FUNC_TPI_DISCONNECT) {
-		/* Release RST+CLK */
-		ISP_DDR &= ~( (1 << ISP_RST) | (1 << ISP_SCK) );
+
+		tpi_send_byte(TPI_OP_SSTCS(TPISR));
+		tpi_send_byte(0);
+
+		clockWait(10);
+
+		/* pulse RST */
+		ISP_OUT |= (1 << ISP_RST);
+		clockWait(5);
+		ISP_OUT &= ~(1 << ISP_RST);
+		clockWait(5);
+
+		/* set all ISP pins inputs */
+		ISP_DDR &= ~((1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI));
+		/* switch pullups off */
+		ISP_OUT &= ~((1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI));
+
 		ledRedOff();
 	
 	} else if (data[1] == USBASP_FUNC_TPI_RAWREAD) {
@@ -192,7 +207,7 @@ uchar usbFunctionRead(uchar *data, uchar len) {
 		return 0xff;
 	}
 
-	/* fill packet */
+	/* fill packet TPI mode */
 	if(prog_state == PROG_STATE_TPI_READ)
 	{
 		tpi_read_block(prog_address, data, len);
@@ -200,6 +215,7 @@ uchar usbFunctionRead(uchar *data, uchar len) {
 		return len;
 	}
 
+	/* fill packet ISP mode */
 	for (i = 0; i < len; i++) {
 		if (prog_state == PROG_STATE_READFLASH) {
 			data[i] = ispReadFlash(prog_address);
@@ -228,7 +244,7 @@ uchar usbFunctionWrite(uchar *data, uchar len) {
 		return 0xff;
 	}
 
-	if(prog_state == PROG_STATE_TPI_WRITE)
+	if (prog_state == PROG_STATE_TPI_WRITE)
 	{
 		tpi_write_block(prog_address, data, len);
 		prog_address += len;

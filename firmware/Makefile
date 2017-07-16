@@ -2,7 +2,6 @@
 #   Makefile for usbasp
 #   20061119   Thomas Fischl        original
 #   20061120   Hanns-Konrad Unger   help: and TARGET=atmega48 added
-#   20101222   S³awomir Fraœ        tpi options
 #
 
 # TARGET=atmega8    HFUSE=0xc9  LFUSE=0xef
@@ -13,16 +12,13 @@ HFUSE=0xc9
 LFUSE=0xef
 
 
-# DEFS += -DTPI_WITH_OPTO
-
-
 # ISP=bsd      PORT=/dev/parport0
 # ISP=ponyser  PORT=/dev/ttyS1
 # ISP=stk500   PORT=/dev/ttyS1
 # ISP=usbasp   PORT=/dev/usb/ttyUSB0
 # ISP=stk500v2 PORT=/dev/ttyUSB0
-ISP=stk200
-PORT=lpt1
+ISP=usbasp
+PORT=/dev/usb/ttyUSB0
 
 help:
 	@echo "Usage: make                same as make help"
@@ -41,9 +37,9 @@ help:
 	@echo "       ISP=${ISP}"
 	@echo "       PORT=${PORT}"
 
-COMPILE = avr-gcc -Wall -O2 -Iusbdrv -I. $(DEFS) -mmcu=$(TARGET) # -DDEBUG_LEVEL=2
+COMPILE = avr-gcc -Wall -O2 -Iusbdrv -I. -mmcu=$(TARGET) # -DDEBUG_LEVEL=2
 
-OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o isp.o tpi.o clock.o main.o
+OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o isp.o clock.o tpi.o main.o
 
 .c.o:
 	$(COMPILE) -c $< -o $@
