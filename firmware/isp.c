@@ -6,7 +6,7 @@
  *                  over ISP interface
  * Licence........: GNU GPL v2 (see Readme.txt)
  * Creation Date..: 2005-02-23
- * Last change....: 2009-02-28
+ * Last change....: 2010-01-19
  */
 
 #include <avr/io.h>
@@ -34,6 +34,7 @@ void ispSetSCKOption(uchar option) {
 	if (option >= USBASP_ISP_SCK_93_75) {
 		ispTransmit = ispTransmit_hw;
 		sck_spsr = 0;
+		sck_sw_delay = 1;	/* force RST#/SCK pulse for 320us */
 
 		switch (option) {
 
@@ -194,10 +195,11 @@ uchar ispEnterProgrammingMode() {
 
 		spiHWdisable();
 
-		/* pulse SCK */
-		ISP_OUT |= (1 << ISP_SCK); /* SCK high */
+		/* pulse RST */
 		ispDelay();
-		ISP_OUT &= ~(1 << ISP_SCK); /* SCK low */
+		ISP_OUT |= (1 << ISP_RST); /* RST high */
+		ispDelay();
+		ISP_OUT &= ~(1 << ISP_RST); /* RST low */
 		ispDelay();
 
 		if (ispTransmit == ispTransmit_hw) {
