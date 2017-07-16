@@ -10,6 +10,7 @@
  */
 
 #include <avr/io.h>
+#include <avr/interrupt.h>
 #include "isp.h"
 #include "clock.h"
 #include "usbasp.h"
@@ -29,7 +30,7 @@ void spiHWenable() {
 void ispSetSCKOption(uchar option) {
 
 	if (option == USBASP_ISP_SCK_AUTO)
-		option = USBASP_ISP_SCK_375;
+		return; /* We will do automatic clock probing later */
 
 	if (option >= USBASP_ISP_SCK_93_75) {
 		ispTransmit = ispTransmit_hw;
@@ -48,7 +49,7 @@ void ispSetSCKOption(uchar option) {
 			break;
 		case USBASP_ISP_SCK_375:
 		default:
-			/* enable SPI, master, 375kHz, XTAL/32 (default) */
+			/* enable SPI, master, 375kHz, XTAL/32 */
 			sck_spcr = (1 << SPE) | (1 << MSTR) | (1 << SPR1);
 			sck_spsr = (1 << SPI2X);
 			break;
@@ -115,38 +116,74 @@ void ispConnect() {
 	ISP_OUT &= ~(1 << ISP_RST); /* RST low */
 	ISP_OUT &= ~(1 << ISP_SCK); /* SCK low */
 
-	/* positive reset pulse > 2 SCK (target) */
-	ispDelay();
-	ISP_OUT |= (1 << ISP_RST); /* RST high */
-	ispDelay();
-	ISP_OUT &= ~(1 << ISP_RST); /* RST low */
+	/* wait >20 msec (as we would do after a reset pulse) */
+	clockWait((1000/320) * 30);
 
-	if (ispTransmit == ispTransmit_hw) {
-		spiHWenable();
-	}
-	
 	/* Initial extended address value */
 	isp_hiaddr = 0xff;  /* ensure that even 0x00000 causes a write of the extended address byte */
 }
 
 void ispDisconnect() {
 
+	cli();
 	/* set all ISP pins inputs */
 	ISP_DDR &= ~((1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI));
 	/* switch pullups off */
 	ISP_OUT &= ~((1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI));
+	sei();
 
 	/* disable hardware SPI */
 	spiHWdisable();
+}
+
+void ispSafeResetPulse(void)
+{
+	/* 
+	 * AVR can not set mutiple bits atomically so
+	 * cli()/sei() are used to ensure operations are atomic
+	 * since USB pins share the same port.
+	 */
+
+	cli();
+	/* set SCK and MOSI input */
+	ISP_DDR &= ~((1 << ISP_SCK) | (1 << ISP_MOSI));
+	/* keep tartget in reset, switch SCK an MOSI pullups off */
+	ISP_OUT &= ~((1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI));
+	sei();
+
+	/* disable hardware SPI */
+	spiHWdisable();
+
+	/* safe (all other signals are inputs) unreset pulse */
+	ISP_OUT |= (1 << ISP_RST); /* RST high */
+	/* 320 usec */
+	clockWait(1);
+	ISP_OUT &= ~(1 << ISP_RST); /* RST low */
+
+	/* wait >20 msec */
+	clockWait((1000/320) * 30);
+
+	cli();
+	/* set SCK and MOSI output */
+	ISP_DDR |= (1 << ISP_SCK) | (1 << ISP_MOSI);
+	sei();
 }
 
 uchar ispTransmit_sw(uchar send_byte) {
 
 	uchar rec_byte = 0;
 	uchar i;
+
+	/* Both master and slave:
+	 *  - Write data on the falling edge of SCK
+	 *  - Read data on the rising edge of SCK
+	 * MISO an MOSI can settle during the LOW SCK interval.
+	 */
+	ISP_OUT &= ~(1 << ISP_SCK); /* SCK low */
 	for (i = 0; i < 8; i++) {
 
-		/* set MSB to MOSI-pin */
+		/* Write data,
+		 * set MSB to MOSI-pin */
 		if ((send_byte & 0x80) != 0) {
 			ISP_OUT |= (1 << ISP_MOSI); /* MOSI high */
 		} else {
@@ -155,17 +192,26 @@ uchar ispTransmit_sw(uchar send_byte) {
 		/* shift to next bit */
 		send_byte = send_byte << 1;
 
-		/* receive data */
+		/* This delay honors the MOSI setup time
+		 * as well as min LOW SCK width */
+		ispDelay();
+
+		/* SCK high */
+		ISP_OUT |= (1 << ISP_SCK);
+
+		/* Read data.
+		 * MISO signal has had plenty of time to settle given
+		 * above LOW SCK delay */
 		rec_byte = rec_byte << 1;
 		if ((ISP_IN & (1 << ISP_MISO)) != 0) {
 			rec_byte++;
 		}
 
-		/* pulse SCK */
-		ISP_OUT |= (1 << ISP_SCK); /* SCK high */
+		/* This delay honors min HIGH SCK width */
 		ispDelay();
-		ISP_OUT &= ~(1 << ISP_SCK); /* SCK low */
-		ispDelay();
+
+		/* SCK low */
+		ISP_OUT &= ~(1 << ISP_SCK);
 	}
 
 	return rec_byte;
@@ -183,6 +229,10 @@ uchar ispEnterProgrammingMode() {
 	uchar check;
 	uchar count = 32;
 
+	if (ispTransmit == ispTransmit_hw) {
+		spiHWenable();
+	}
+
 	while (count--) {
 		ispTransmit(0xAC);
 		ispTransmit(0x53);
@@ -195,11 +245,14 @@ uchar ispEnterProgrammingMode() {
 
 		spiHWdisable();
 
-		/* pulse RST */
+		/* The target is out of sync: give SCK one pulse and try again.
+		 * In the worst case, we should be back in sync after
+		 * retrying 32 times (the total nr of bits in the 4 byte command).
+		 */
 		ispDelay();
-		ISP_OUT |= (1 << ISP_RST); /* RST high */
+		ISP_OUT |= (1 << ISP_SCK); /* SCK high */
 		ispDelay();
-		ISP_OUT &= ~(1 << ISP_RST); /* RST low */
+		ISP_OUT &= ~(1 << ISP_SCK); /* SCK low */
 		ispDelay();
 
 		if (ispTransmit == ispTransmit_hw) {
@@ -207,7 +260,7 @@ uchar ispEnterProgrammingMode() {
 		}
 
 	}
-
+	spiHWdisable();
 	return 1; /* error: device dosn't answer */
 }
 

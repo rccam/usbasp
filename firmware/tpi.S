@@ -3,9 +3,14 @@
  * \file tpi.s
  * \author S³awomir Fraœ
  */
+
+/*
+ * Only generate code if TPI is not disabled
+ */
+#ifndef USBASP_CFG_DISABLE_TPI
+
 #include <avr/io.h>
 #include "tpi_defs.h"
-
 
 #define TPI_CLK_PORT PORTB
 #define TPI_CLK_DDR DDRB
@@ -256,3 +261,4 @@ tpi_write_block:
 	dec r23
 	brne .tpi_write_loop
 	ret
+#endif
