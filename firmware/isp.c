@@ -19,6 +19,7 @@
 uchar sck_sw_delay;
 uchar sck_spcr;
 uchar sck_spsr;
+uchar isp_hiaddr;
 
 void spiHWenable() {
 	SPCR = sck_spcr;
@@ -122,6 +123,9 @@ void ispConnect() {
 	if (ispTransmit == ispTransmit_hw) {
 		spiHWenable();
 	}
+	
+	/* Initial extended address value */
+	isp_hiaddr = 0;
 }
 
 void ispDisconnect() {
@@ -205,7 +209,28 @@ uchar ispEnterProgrammingMode() {
 	return 1; /* error: device dosn't answer */
 }
 
+static void ispUpdateExtended(unsigned long address)
+{
+	uchar curr_hiaddr;
+
+	curr_hiaddr = (address >> 17);
+
+	/* check if extended address byte is changed */
+	if(isp_hiaddr != curr_hiaddr)
+	{
+		isp_hiaddr = curr_hiaddr;
+		/* Load Extended Address byte */
+		ispTransmit(0x4D);
+		ispTransmit(0x00);
+		ispTransmit(isp_hiaddr);
+		ispTransmit(0x00);
+	}
+}
+
 uchar ispReadFlash(unsigned long address) {
+
+	ispUpdateExtended(address);
+
 	ispTransmit(0x20 | ((address & 1) << 3));
 	ispTransmit(address >> 9);
 	ispTransmit(address >> 1);
@@ -219,6 +244,8 @@ uchar ispWriteFlash(unsigned long address, uchar data, uchar pollmode) {
 	 return 0;
 	 }
 	 */
+
+	ispUpdateExtended(address);
 
 	ispTransmit(0x40 | ((address & 1) << 3));
 	ispTransmit(address >> 9);
@@ -253,6 +280,9 @@ uchar ispWriteFlash(unsigned long address, uchar data, uchar pollmode) {
 }
 
 uchar ispFlushPage(unsigned long address, uchar pollvalue) {
+
+	ispUpdateExtended(address);
+	
 	ispTransmit(0x4C);
 	ispTransmit(address >> 9);
 	ispTransmit(address >> 1);
