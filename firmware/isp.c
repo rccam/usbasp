@@ -34,7 +34,7 @@ void ispSetSCKOption(uchar option) {
 	if (option >= USBASP_ISP_SCK_93_75) {
 		ispTransmit = ispTransmit_hw;
 		sck_spsr = 0;
-		sck_sw_delay = 1;	/* force RST#/SCK pulse for 320us */
+		sck_sw_delay = 10;	/* force RST#/SCK pulse for 320us */
 
 		switch (option) {
 
