@@ -168,7 +168,7 @@ HEXFILE:=$(OUT)/$(MCU)/$(FW_BASENAME)-$(MCU).hex
 
 COMPILE := avr-gcc -g -Wall -O2 -Iusbdrv -I. -fdata-sections -ffunction-sections -Wl,--gc-sections # -DDEBUG_LEVEL=2
 
-OBJECTS := usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o isp.o clock.o tpi.o main.o
+OBJECTS := usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o pdi.o isp.o clock.o tpi.o main.o
 
 # Output the command lines, or not:
 ifeq ($(V),)

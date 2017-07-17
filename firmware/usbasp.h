@@ -1,5 +1,5 @@
 /*
- * usbasp.c - part of USBasp
+ * usbasp.h - part of USBasp
  *
  * Autor..........: Thomas Fischl <tfischl@gmx.de>
  * Description....: Definitions and macros for usbasp
@@ -29,10 +29,15 @@
 #define USBASP_FUNC_TPI_READBLOCK    15
 #define USBASP_FUNC_TPI_WRITEBLOCK   16
 #define USBASP_FUNC_GETISPSCK        20
+#define USBASP_FUNC_PDI_CONNECT      21
+#define USBASP_FUNC_PDI_DISCONNECT   22
+#define USBASP_FUNC_PDI_READ         23
+#define USBASP_FUNC_PDI_SEND         24
 #define USBASP_FUNC_GETCAPABILITIES 127
 
 /* USBASP capabilities */
 #define USBASP_CAP_0_TPI    0x01
+#define USBASP_CAP_0_PDI    0x02
 
 /* programming state */
 #define PROG_STATE_IDLE         0
@@ -42,10 +47,21 @@
 #define PROG_STATE_WRITEEEPROM  4
 #define PROG_STATE_TPI_READ     5
 #define PROG_STATE_TPI_WRITE    6
+#define PROG_STATE_PDI_READ     7
+#define PROG_STATE_PDI_SEND     8
 
 /* Block mode flags */
 #define PROG_BLOCKFLAG_FIRST    1
 #define PROG_BLOCKFLAG_LAST     2
+
+/* PDI */
+#define USBASP_PDI_WAIT_BUSY   1
+#define USBASP_PDI_MARK_BUSY   2
+
+/* PDI */
+#define EXIT_RESET_UNSPEC 0
+#define EXIT_RESET_ENABLED 1
+#define EXIT_RESET_DISABLED 2
 
 /* ISP SCK speed identifiers */
 #define USBASP_ISP_SCK_AUTO   0

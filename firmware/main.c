@@ -17,6 +17,7 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
+#include <string.h>  //PDI
 
 #include "usbasp.h"
 #include "usbdrv.h"
@@ -24,6 +25,7 @@
 #include "clock.h"
 #include "tpi.h"
 #include "tpi_defs.h"
+#include "pdi.h"
 
 static uchar replyBuffer[8];
 
@@ -36,6 +38,10 @@ static unsigned int prog_nbytes = 0;
 static unsigned int prog_pagesize;
 static uchar prog_blockflags;
 static uchar prog_pagecounter;
+#ifndef USBASP_CFG_DISABLE_TPI
+static uchar prog_buf[128]; //PDI
+static uchar prog_buf_pos;  //PDI
+#endif
 
 /* Array of clock speeds to try during auto probing */
 static const uchar auto_clocks[] = {
@@ -263,6 +269,28 @@ uchar usbFunctionSetup(uchar data[8]) {
 		prog_state = PROG_STATE_TPI_WRITE;
 		len = 0xff; /* multiple out */
 
+    } else if (data[1] == USBASP_FUNC_PDI_CONNECT) {    //PDI
+        if ((replyBuffer[0]=pdiInit())==PDI_STATUS_OK)
+        ledRedOn();
+        len=1;
+        
+    } else if (data[1] == USBASP_FUNC_PDI_DISCONNECT) { //PDI
+        ledRedOff();
+        pdiCleanup(data[2]);
+        
+    } else if (data[1] == USBASP_FUNC_PDI_SEND) {       //PDI
+        prog_nbytes = (data[7] << 8) | data[6];
+        prog_blockflags = data[2];
+        prog_state = PROG_STATE_PDI_SEND;
+        prog_buf_pos = 0;
+        len = 0xff;
+        
+    } else if (data[1] == USBASP_FUNC_PDI_READ) {       //PDI
+        memmove(&prog_address,data+2,4);
+        prog_nbytes = (data[7] << 8) | data[6];
+        prog_state = PROG_STATE_PDI_READ;
+        len = 0xff;
+        
 #endif
 	
 	} else if (data[1] == USBASP_FUNC_GETCAPABILITIES) {
@@ -286,37 +314,57 @@ uchar usbFunctionRead(uchar *data, uchar len) {
 
 	uchar i;
 
-	/* check if programmer is in correct read state */
-	if ((prog_state != PROG_STATE_READFLASH) && (prog_state
-			!= PROG_STATE_READEEPROM) && (prog_state != PROG_STATE_TPI_READ)) {
-		return 0xff;
-	}
+    if (prog_state == PROG_STATE_READFLASH) {
+        
+        /* fill packet ISP mode */
+        
+        for (i = 0; i < len; i++) {
+            data[i] = ispReadFlash(prog_address);
+            prog_address++;
+        }
+        
+        /* last packet? */
+        
+        if (len < 8)
+        prog_state = PROG_STATE_IDLE;
+        
+    } else if (prog_state == PROG_STATE_READEEPROM) {
+        /* fill packet ISP mode */
+        
+        for (i = 0; i < len; i++) {
+            data[i] = ispReadEEPROM(prog_address);
+            prog_address++;
+        }
+        
+        /* last packet? */
+        
+        if (len < 8)
+        prog_state = PROG_STATE_IDLE;
 
 #ifndef USBASP_CFG_DISABLE_TPI
-	/* fill packet TPI mode */
-	if(prog_state == PROG_STATE_TPI_READ)
-	{
-		tpi_read_block(prog_address, data, len);
-		prog_address += len;
-		return len;
-	}
+    } else if (prog_state == PROG_STATE_TPI_READ) {
+        tpi_read_block(prog_address, data, len);
+        prog_address += len;
+        
+    } else if (prog_state == PROG_STATE_PDI_READ) {     //PDI
+        pdiDisableTimerClock();
+        pdiSendIdle();
+        
+        if (pdi_nvmbusy)
+        pdiWaitNVM();
+        
+        uchar ret=pdiReadBlock(prog_address, data, len);
+        pdiEnableTimerClock();
+        
+        if (ret!=PDI_STATUS_OK)
+        return 0;
+        
+        prog_address += len;
 #endif
-
-	/* fill packet ISP mode */
-	for (i = 0; i < len; i++) {
-		if (prog_state == PROG_STATE_READFLASH) {
-			data[i] = ispReadFlash(prog_address);
-		} else {
-			data[i] = ispReadEEPROM(prog_address);
-		}
-		prog_address++;
-	}
-
-	/* last packet? */
-	if (len < 8) {
-		prog_state = PROG_STATE_IDLE;
-	}
-
+    } else {
+        return 0xff;
+    }
+    
 	return len;
 }
 
@@ -325,69 +373,91 @@ uchar usbFunctionWrite(uchar *data, uchar len) {
 	uchar retVal = 0;
 	uchar i;
 
-	/* check if programmer is in correct write state */
-	if ((prog_state != PROG_STATE_WRITEFLASH) && (prog_state
-			!= PROG_STATE_WRITEEEPROM) && (prog_state != PROG_STATE_TPI_WRITE)) {
-		return 0xff;
-	}
-
+    if (prog_state == PROG_STATE_WRITEFLASH || prog_state == PROG_STATE_WRITEEEPROM ) {
+        for (i = 0; i < len; i++) {
+            if (prog_state == PROG_STATE_WRITEFLASH) {
+                /* Flash */
+                
+                if (prog_pagesize == 0) {
+                    /* not paged */
+                    ispWriteFlash(prog_address, data[i], 1);
+                    
+                } else {
+                    /* paged */
+                    ispWriteFlash(prog_address, data[i], 0);
+                    prog_pagecounter--;
+                    
+                    if (prog_pagecounter == 0) {
+                        ispFlushPage(prog_address, data[i]);
+                        prog_pagecounter = prog_pagesize;
+                    }
+                    
+                }
+                
+            } else {
+                /* EEPROM */
+                ispWriteEEPROM(prog_address, data[i]);
+            }
+            
+            prog_nbytes--;
+            
+            if (prog_nbytes == 0) {
+                prog_state = PROG_STATE_IDLE;
+                
+                if ((prog_blockflags & PROG_BLOCKFLAG_LAST) && (prog_pagecounter != prog_pagesize)) {
+                    /* last block and page flush pending, so flush it now */
+                    ispFlushPage(prog_address, data[i]);
+                }
+                
+                retVal = 1; // Need to return 1 when no more data is to be received
+            }
+            
+            prog_address++;
+        }
+        
+        return retVal;
+        
 #ifndef USBASP_CFG_DISABLE_TPI
-	if (prog_state == PROG_STATE_TPI_WRITE)
-	{
-		tpi_write_block(prog_address, data, len);
-		prog_address += len;
-		prog_nbytes -= len;
-		if(prog_nbytes <= 0)
-		{
-			prog_state = PROG_STATE_IDLE;
-			return 1;
-		}
-		return 0;
-	}
+    } else if (prog_state == PROG_STATE_TPI_WRITE) {
+        tpi_write_block(prog_address, data, len);
+        prog_address += len;
+        prog_nbytes -= len;
+        
+        if(prog_nbytes <= 0) {
+            prog_state = PROG_STATE_IDLE;
+            return 1;
+        }
+        
+        return 0;
+        
+    } else if (prog_state == PROG_STATE_PDI_SEND) {     //PDI
+        memmove(&prog_buf[prog_buf_pos],data,len);
+        prog_buf_pos += len;
+        prog_nbytes -= len;
+        
+        if (prog_nbytes==0) {
+            pdiDisableTimerClock();
+            pdiSendIdle();
+            
+            if ((prog_blockflags & USBASP_PDI_WAIT_BUSY) && pdi_nvmbusy)
+            pdiWaitNVM();
+            
+            pdiSendBytes(prog_buf,prog_buf_pos);
+            
+            if (prog_blockflags & USBASP_PDI_MARK_BUSY)
+            pdi_nvmbusy=1;
+            
+            pdiEnableTimerClock();
+            prog_state = PROG_STATE_IDLE;
+            return 1;
+        }
 #endif
-
-	for (i = 0; i < len; i++) {
-
-		if (prog_state == PROG_STATE_WRITEFLASH) {
-			/* Flash */
-
-			if (prog_pagesize == 0) {
-				/* not paged */
-				ispWriteFlash(prog_address, data[i], 1);
-			} else {
-				/* paged */
-				ispWriteFlash(prog_address, data[i], 0);
-				prog_pagecounter--;
-				if (prog_pagecounter == 0) {
-					ispFlushPage(prog_address, data[i]);
-					prog_pagecounter = prog_pagesize;
-				}
-			}
-
-		} else {
-			/* EEPROM */
-			ispWriteEEPROM(prog_address, data[i]);
-		}
-
-		prog_nbytes--;
-
-		if (prog_nbytes == 0) {
-			prog_state = PROG_STATE_IDLE;
-			if ((prog_blockflags & PROG_BLOCKFLAG_LAST) && (prog_pagecounter
-					!= prog_pagesize)) {
-
-				/* last block and page flush pending, so flush it now */
-				ispFlushPage(prog_address, data[i]);
-			}
-
-			retVal = 1; // Need to return 1 when no more data is to be received
-		}
-
-		prog_address++;
-	}
-
-	return retVal;
+        return 0;
+    }
+    
+    return 0xff;
 }
+
 #ifndef USBASP_CFG_DISABLE_USB_LEDSTATUS
 /*
  * Hooks to control green led by USB status:
