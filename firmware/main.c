@@ -39,7 +39,7 @@ static unsigned int prog_nbytes = 0;
 static unsigned int prog_pagesize;
 static uchar prog_blockflags;
 static uchar prog_pagecounter;
-#ifndef USBASP_CFG_DISABLE_TPI
+#ifndef USBASP_CFG_DISABLE_PDI
 static uchar prog_buf[128]; //PDI
 static uchar prog_buf_pos;  //PDI
 #endif
@@ -272,7 +272,8 @@ uchar usbFunctionSetup(uchar data[8]) {
 		prog_nbytes = (data[7] << 8) | data[6];
 		prog_state = PROG_STATE_TPI_WRITE;
 		len = 0xff; /* multiple out */
-
+#endif
+#ifndef USBASP_CFG_DISABLE_PDI
     } else if (data[1] == USBASP_FUNC_PDI_CONNECT) {    //PDI
         if ((replyBuffer[0]=pdiInit())==PDI_STATUS_OK)
         ledRedOn();
@@ -349,7 +350,8 @@ uchar usbFunctionRead(uchar *data, uchar len) {
     } else if (prog_state == PROG_STATE_TPI_READ) {
         tpi_read_block(prog_address, data, len);
         prog_address += len;
-        
+#endif
+#ifndef USBASP_CFG_DISABLE_PDI
     } else if (prog_state == PROG_STATE_PDI_READ) {     //PDI
         pdiDisableTimerClock();
         pdiSendIdle();
@@ -433,7 +435,8 @@ uchar usbFunctionWrite(uchar *data, uchar len) {
         }
         
         return 0;
-        
+#endif
+#ifndef USBASP_CFG_DISABLE_PDI
     } else if (prog_state == PROG_STATE_PDI_SEND) {     //PDI
         memmove(&prog_buf[prog_buf_pos],data,len);
         prog_buf_pos += len;
