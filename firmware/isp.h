@@ -32,6 +32,13 @@
 #define ISP_SCK   PB5
 #endif
 
+#ifdef YUKI_HARDWARE
+#define	OE_OUT    PORTC
+#define OE_IN     PINC
+#define OE_DDR    DDRC
+#define ISP_OE    PC5
+#endif
+
 /* Prepare connection to target device */
 void ispConnect();
 

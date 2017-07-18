@@ -125,6 +125,12 @@ void ispDelay() {
 
 void ispConnect() {
 
+#ifdef YUKI_HARDWARE
+    ISP_OUT |= (1 << ISP_MISO);		// MISO pull up
+    OE_DDR |= (1 << ISP_OE);			// OE as output
+    OE_OUT &= ~(1 << ISP_OE);		// OE=low
+#endif
+    
 	/* all ISP pins are inputs before */
 	/* now set output pins */
 	ISP_DDR |= (1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI);
@@ -149,6 +155,10 @@ void ispDisconnect() {
 	ISP_OUT &= ~((1 << ISP_RST) | (1 << ISP_SCK) | (1 << ISP_MOSI));
 	sei();
 
+#ifdef YUKI_HARDWARE
+    OE_DDR &= ~(1 << ISP_OE);		// OE as input
+#endif
+    
 	/* disable hardware SPI */
 	spiHWdisable();
 }
