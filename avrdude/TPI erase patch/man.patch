@@ -1,0 +1,18 @@
+*** avrdude-6.3/avrdude.1	2016-02-15 22:02:26.000000000 +0100
+--- avrdude-6.3_new/avrdude.1	2016-11-24 12:09:13.984834024 +0100
+***************
+*** 1047,1052 ****
+--- 1047,1059 ----
+  .It Ar timeout=<usb-transaction-timeout>
+  Sets the timeout for USB reads and writes in milliseconds (default is 1500 ms).
+  .El
++ .It Ar USBasp
++ Extended parameters:
++ .Bl -tag -offset indent -width indent
++ .It Ar section_config
++ (ATtiny 4/5/9/10/20/40) Programmer will erase
++ configuration section only with option '-e' (chip erase).
++ .El
+  .El
+  .Sh FILES
+  .Bl -tag -offset indent -width /dev/ppi0XXX

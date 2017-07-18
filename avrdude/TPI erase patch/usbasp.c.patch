@@ -1,0 +1,120 @@
+*** avrdude-6.3/usbasp.c	2014-11-20 23:49:14.000000000 +0100
+--- avrdude-6.3_new/usbasp.c	2016-11-24 11:53:32.608880548 +0100
+***************
+*** 120,125 ****
+--- 120,126 ----
+    int sckfreq_hz;
+    unsigned int capabilities;
+    int use_tpi;
++   int section_e;
+  };
+  
+  #define PDATA(pgm) ((struct pdata *)(pgm->cookie))
+***************
+*** 131,136 ****
+--- 132,138 ----
+  // interface - management
+  static void usbasp_setup(PROGRAMMER * pgm);
+  static void usbasp_teardown(PROGRAMMER * pgm);
++ static int usbasp_parseextparms(PROGRAMMER * pgm, LISTID extparms);
+  // internal functions
+  static int usbasp_transmit(PROGRAMMER * pgm, unsigned char receive,
+  			   unsigned char functionid, const unsigned char *send,
+***************
+*** 192,197 ****
+--- 194,224 ----
+    free(pgm->cookie);
+  }
+  
++ static int usbasp_parseextparms(PROGRAMMER * pgm, LISTID extparms)
++ {
++   LNODEID ln;
++   const char *extended_param;
++   int rv = 0;
++ 
++   for (ln = lfirst(extparms); ln; ln = lnext(ln)) {
++     extended_param = ldata(ln);
++ 
++     if (strncmp(extended_param, "section_config", strlen("section_config")) == 0) {
++       avrdude_message(MSG_NOTICE2, "%s: usbasp_parseextparms(): set section_e to 1 (config section)\n",
++                       progname);
++       PDATA(pgm)->section_e = 1;
++       continue;
++     }
++ 
++     avrdude_message(MSG_INFO, "%s: usbasp_parseextparms(): invalid extended parameter '%s'\n",
++                     progname, extended_param);
++     rv = -1;
++   }
++ 
++   return rv;
++ }
++ 
++ 
+  /* Internal functions */
+  
+  static const char *usbasp_get_funcname(unsigned char functionid)
+***************
+*** 1015,1030 ****
+  
+  static int usbasp_tpi_chip_erase(PROGRAMMER * pgm, AVRPART * p)
+  {
+!   avrdude_message(MSG_DEBUG, "%s: usbasp_tpi_chip_erase()\n", progname);
+  
+!   /* Set PR to flash */
+    usbasp_tpi_send_byte(pgm, TPI_OP_SSTPR(0));
+!   usbasp_tpi_send_byte(pgm, 0x01);
+    usbasp_tpi_send_byte(pgm, TPI_OP_SSTPR(1));
+!   usbasp_tpi_send_byte(pgm, 0x40);
+!   /* select ERASE */
+    usbasp_tpi_send_byte(pgm, TPI_OP_SOUT(NVMCMD));
+!   usbasp_tpi_send_byte(pgm, NVMCMD_CHIP_ERASE);
+    /* dummy write */
+    usbasp_tpi_send_byte(pgm, TPI_OP_SST_INC);
+    usbasp_tpi_send_byte(pgm, 0x00);
+--- 1042,1076 ----
+  
+  static int usbasp_tpi_chip_erase(PROGRAMMER * pgm, AVRPART * p)
+  {
+!   int PR_0;
+!   int PR_1;
+!   int NVM_CMD;
+!   
+!   switch (PDATA(pgm)->section_e) {
+!     /* Config bits section erase */
+!   case 1:
+!     PR_0 = 0x41;
+!     PR_1 = 0x3F;
+!     NVM_CMD = NVMCMD_SECTION_ERASE;
+!     avrdude_message(MSG_DEBUG, "%s: usbasp_tpi_chip_erase() - section erase!\n", progname);
+!     break;
+!     /* Chip erase (flash only) */
+!   default:
+!     PR_0 = 0x01;
+!     PR_1 = 0x40;
+!     NVM_CMD = NVMCMD_CHIP_ERASE;
+!     avrdude_message(MSG_DEBUG, "%s: usbasp_tpi_chip_erase() - chip erase\n", progname);
+!     break;
+!   }
+  
+!   /* Set PR */
+    usbasp_tpi_send_byte(pgm, TPI_OP_SSTPR(0));
+!   usbasp_tpi_send_byte(pgm, PR_0);
+    usbasp_tpi_send_byte(pgm, TPI_OP_SSTPR(1));
+!   usbasp_tpi_send_byte(pgm, PR_1);
+!   /* select what been erase  */
+    usbasp_tpi_send_byte(pgm, TPI_OP_SOUT(NVMCMD));
+!   usbasp_tpi_send_byte(pgm, NVM_CMD);
+    /* dummy write */
+    usbasp_tpi_send_byte(pgm, TPI_OP_SST_INC);
+    usbasp_tpi_send_byte(pgm, 0x00);
+***************
+*** 1194,1199 ****
+--- 1240,1246 ----
+    pgm->setup          = usbasp_setup;
+    pgm->teardown       = usbasp_teardown;
+    pgm->set_sck_period = usbasp_spi_set_sck_period;
++   pgm->parseextparams = usbasp_parseextparms;
+  
+  }
+  

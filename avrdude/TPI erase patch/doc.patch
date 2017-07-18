@@ -1,0 +1,19 @@
+*** avrdude-6.3/doc/avrdude.texi	2016-02-15 22:02:26.000000000 +0100
+--- avrdude-6.3_new/doc/avrdude.texi	2016-11-24 12:09:59.553961343 +0100
+***************
+*** 909,914 ****
+--- 909,922 ----
+  Sets the timeout for USB reads and writes in milliseconds (default is 1500 ms).
+  @end table
+  
++ @item USBasp
++ Extended parameters:
++ @table @code
++ @item @samp{section_config}
++ (ATtiny 4/5/9/10/20/40) Programmer will erase
++ configuration section only with option '-e' (chip erase).
++ @end table
++ 
+  @end table
+  
+  @page
