@@ -18,6 +18,7 @@
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
 #include <string.h>  //PDI
+#include <avr/eeprom.h> //ATTINY
 
 #include "usbasp.h"
 #include "usbdrv.h"
@@ -45,12 +46,15 @@ static uchar prog_buf_pos;  //PDI
 
 /* Array of clock speeds to try during auto probing */
 static const uchar auto_clocks[] = {
+#ifndef FORCE_ISP_SW  //too fast for sw
 	USBASP_ISP_SCK_1500,
 	USBASP_ISP_SCK_375,
+#endif
 	USBASP_ISP_SCK_93_75,
 	USBASP_ISP_SCK_16,
 	USBASP_ISP_SCK_4,
 	USBASP_ISP_SCK_1,
+    USBASP_ISP_SCK_0_5,
 };
 
 /* Auto probing of spi clock
@@ -96,11 +100,11 @@ uchar usbFunctionSetup(uchar data[8]) {
 	uchar len = 0;
 
 	if (data[1] == USBASP_FUNC_CONNECT) {
-
+#ifndef ATTINY
 		/* Force SCK speed if jumper set */
 		if ((PINC & (1 << PC2)) == 0)
 			prog_sck = USBASP_ISP_SCK_4;
-
+#endif
 		ispSetSCKOption(prog_sck);
 
 		/* set compatibility mode of address delivering */
@@ -473,14 +477,81 @@ void usbAddressAssigned() {
 }
 #endif
 
+#ifdef CALIB_RC
+/* ------------------------------------------------------------------------- */
+/* ------------------------ Oscillator Calibration ------------------------- */
+/* ------------------------------------------------------------------------- */
+
+/* Calibrate the RC oscillator to 8.25 MHz. The core clock of 16.5 MHz is
+  + * derived from the 66 MHz peripheral clock by dividing. Our timing reference
+  + * is the Start Of Frame signal (a single SE0 bit) available immediately after
+  + * a USB RESET. We first do a binary search for the OSCCAL value and then
+  + * optimize this value with a neighboorhod search.
+  + * This algorithm may also be used to calibrate the RC oscillator directly to
+  + * 12 MHz (no PLL involved, can therefore be used on almost ALL AVRs), but this
+  + * is wide outside the spec for the OSCCAL value and the required precision for
+  + * the 12 MHz clock! Use the RC oscillator calibrated to 12 MHz for
+  + * experimental purposes only!
+  + */
+static void calibrateOscillator(void) {
+    
+    uchar step = 128;
+    uchar trialValue = 0, optimumValue;
+    int x, optimumDev, targetValue = (unsigned)(1499 * (double)F_CPU / 10.5e6 + 0.5);
+    
+    /* do a binary search: */
+    do {
+        OSCCAL = trialValue + step;
+        x = usbMeasureFrameLength();    /* proportional to current real frequency */
+            
+        if(x < targetValue)             /* frequency still too low */
+            trialValue += step;
+            
+        step >>= 1;
+    } while(step > 0);
+    
+    /* We have a precision of +/- 1 for optimum OSCCAL here */
+    /* now do a neighborhood search for optimum value */
+    optimumValue = trialValue;
+    optimumDev = x; /* this is certainly far away from optimum */
+    
+    for(OSCCAL = trialValue - 1; OSCCAL <= trialValue + 1; OSCCAL++) {
+        x = usbMeasureFrameLength() - targetValue;
+            
+        if(x < 0)
+            x = -x;
+        
+        if(x < optimumDev) {
+            optimumDev = x;
+            optimumValue = OSCCAL;
+        }
+    }
+    
+        OSCCAL = optimumValue;
+}
+
+void usbEventResetReady(void)
+{
+    calibrateOscillator();
+    eeprom_write_byte(0, OSCCAL);   /* store the calibrated value in EEPROM */
+}
+#endif /*CALIB_RC*/
+
+/* ------------------------------------------------------------------------- */
+/* --------------------------------- main ---------------------------------- */
+/* ------------------------------------------------------------------------- */
 int main(void) {
 
+#ifdef ATTINY
+    uchar   calibrationValue;
+#endif
+    
 	/* all USB and ISP pins inputs */
 	DDRB = 0;
 
 	/* no pullups on USB and ISP pins */
 	PORTB = 0;
-
+#ifndef ATTINY
 	/* set PD0 and PD1 low to drive the ISP pins low */
 	PORTD = 0;
 
@@ -503,7 +574,13 @@ int main(void) {
 	 */
 
 	PORTC = ( (1 << PC0) | (1 << PC1) | (1 << PC2));
-
+#else
+    calibrationValue = eeprom_read_byte(0); /* calibration value from last time */
+    
+    if(calibrationValue != 0xff){  //first connection after flash may be wrong (no data in eeprom)
+        OSCCAL = calibrationValue;
+    }
+#endif
 	/*
 	 * if USB led status is disabled, turn green led on now
 	 * Otherwise, green led will light when device has enumerated

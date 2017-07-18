@@ -31,6 +31,10 @@ section at the end of this file).
 /* This is the port where the USB bus is connected. When you configure it to
  * "B", the registers PORTB, PINB and DDRB will be used.
  */
+#ifdef ATTINY
+define USB_CFG_DMINUS_BIT      3 //ATTINY85
+#define USB_CFG_DPLUS_BIT      4
+#else
 #define USB_CFG_DMINUS_BIT      0
 /* This is the bit number in USB_CFG_IOPORT where the USB D- line is connected.
  * This may be any bit in the port.
@@ -44,6 +48,7 @@ section at the end of this file).
  * interrupt, the USB interrupt will also be triggered at Start-Of-Frame
  * markers every millisecond.]
  */
+#endif
 #ifndef F_CPU
 #error Missing F_CPU clock definition
 #endif
@@ -168,6 +173,12 @@ section at the end of this file).
  * (besides debugging) is to flash a status LED on each packet.
  */
 
+#ifdef CALIB_RC
+#ifndef __ASSEMBLER__
+extern void usbEventResetReady(void);
+#endif
+#endif
+
 #ifndef USBASP_CFG_DISABLE_USB_LEDSTATUS
 #ifndef __ASSEMBLER__
 extern void usbHadReset();
@@ -183,7 +194,8 @@ extern void usbAddressAssigned();
 /* This macro (if defined) is executed when a USB SET_ADDRESS request was
  * received.
  */
-#endif
+#endif  /*USBASP_CFG_DISABLE_USB_LEDSTATUS*/
+
 #define USB_COUNT_SOF                   0
 /* define this macro to 1 if you need the global variable "usbSofCount" which
  * counts SOF packets. This feature requires that the hardware interrupt is
@@ -216,10 +228,19 @@ extern void usbAddressAssigned();
  * usbFunctionWrite(). Use the global usbCurrentDataToken and a static variable
  * for each control- and out-endpoint to check for duplicate packets.
  */
+#ifdef ATTINY
+#define USB_RESET_HOOK(isReset)             if(!isReset){usbEventResetReady();}
+/* This macro is a hook if you need to know when an USB RESET occurs. It has
+ * one parameter which distinguishes between the start of RESET state and its
+ * end.
+ */
+#define USB_CFG_HAVE_MEASURE_FRAME_LENGTH   1
+#else
 #define USB_CFG_HAVE_MEASURE_FRAME_LENGTH   0
 /* define this macro to 1 if you want the function usbMeasureFrameLength()
  * compiled in. This function can be used to calibrate the AVR's RC oscillator.
  */
+#endif /*ATTINY*/
 #define USB_USE_FAST_CRC                0
 /* The assembler module has two implementations for the CRC algorithm. One is
  * faster, the other is smaller. This CRC routine is only used for transmitted
@@ -400,5 +421,15 @@ extern void usbAddressAssigned();
 /* #define USB_INTR_ENABLE_BIT     INT0 */
 /* #define USB_INTR_PENDING        GIFR */
 /* #define USB_INTR_PENDING_BIT    INTF0 */
+/* #define USB_INTR_VECTOR         INT0_vect */
+
+#ifdef ATTINY
+	// use PCINT1 instead of INT0
+#define USB_INTR_CFG            PCMSK
+#define USB_INTR_CFG_SET        (1<<USB_CFG_DPLUS_BIT)
+#define USB_INTR_ENABLE_BIT     PCIE
+#define USB_INTR_PENDING_BIT    PCIF
+#define USB_INTR_VECTOR         SIG_PIN_CHANGE
+#endif
 
 #endif /* __usbconfig_h_included__ */

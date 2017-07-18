@@ -78,10 +78,18 @@
 #define USBASP_ISP_SCK_750    11  /* 750 kHz   */
 #define USBASP_ISP_SCK_1500   12  /* 1.5 MHz   */
 
+#ifdef WITHOUT_LED
+#define USBASP_CFG_DISABLE_USB_LEDSTATUS
+#define ledRedOn()
+#define ledRedOff()
+#define ledGreenOn()
+#define ledGreenOff()
+#else
 /* macros for gpio functions */
 #define ledRedOn()    PORTC &= ~(1 << PC1)
 #define ledRedOff()   PORTC |= (1 << PC1)
 #define ledGreenOn()  PORTC &= ~(1 << PC0)
 #define ledGreenOff() PORTC |= (1 << PC0)
+#endif
 
 #endif /* USBASP_H_ */

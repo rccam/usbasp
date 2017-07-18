@@ -14,7 +14,7 @@
 ##############################################################################
 
 # List of supported mcus
-MCUS := atmega8 atmega48 atmega88
+MCUS := atmega8 atmega48 atmega88 attiny85
 
 # 'make all' will build firmware for all supported mcu's
 # You will typically have one of those mcu's on your desk to work with.
@@ -126,19 +126,32 @@ endif
 	@echo "USBASP_FWREV_MIN := $(USBASP_FWREV_MIN)">> $(CONFIGFILE)
 	@echo "# Verbose enable for make output(set to any value to enable)">> $(CONFIGFILE)
 	@echo "V := $(V)">> $(CONFIGFILE)
+	@echo "# clock set to default value for chosen MCU: $(MCU) unless explicitly overridden" >> $(CONFIGFILE)
+ifdef F_CPU
+	@echo "F_CPU := $(F_CPU)" >> $(CONFIGFILE)
+else
+	@echo "#F_CPU := $(F_CPU)" >> $(CONFIGFILE)
+endif
 
 # pick default fuse values based on MCU if not overridden
 # by commandline or config file
 ifeq ($(MCU), atmega8)
 HFUSE ?= 0xc9
 LFUSE ?= 0xef
+F_CPU ?= 12000000L
 else ifeq ($(MCU), atmega48)
 HFUSE ?= 0xdd
 LFUSE ?= 0xff
+F_CPU ?= 12000000L
 # 4k flash device
 else ifeq ($(MCU), atmega88)
 HFUSE ?= 0xdd
 LFUSE ?= 0xff
+F_CPU ?= 12000000L
+else ifeq ($(MCU), attiny85)
+HFUSE ?= 0xde
+LFUSE ?= 0xe2
+F_CPU ?= 16500000L
 endif
 
 
@@ -150,6 +163,7 @@ REV := v$(USBASP_FWREV_MAJ).$(USBASP_FWREV_MIN)
 CFLAGS_atmega8  := -mmcu=atmega8
 CFLAGS_atmega88 := -mmcu=atmega88
 CFLAGS_atmega48 := -mmcu=atmega48 -DUSBASP_CFG_DISABLE_TPI
+CFLAGS_attiny85 := -mmcu=attiny85 -DWITHOUT_LED -DATTINY -DCALIB_RC -DFORCE_ISP_SW
 
 
 # get date in YYYY-MM-DD format.
@@ -166,7 +180,7 @@ FW_BASENAME:=usbasp-$(REV)
 # default hexfile name unless overridden
 HEXFILE:=$(OUT)/$(MCU)/$(FW_BASENAME)-$(MCU).hex
 
-COMPILE := avr-gcc -g -Wall -O2 -Iusbdrv -I. -fdata-sections -ffunction-sections -Wl,--gc-sections # -DDEBUG_LEVEL=2
+COMPILE := avr-gcc -g -Wall -O2 -Iusbdrv -I. -fdata-sections -ffunction-sections -Wl,--gc-sections -DF_CPU=$(F_CPU) # -DDEBUG_LEVEL=2
 
 OBJECTS := usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o pdi.o isp.o clock.o tpi.o main.o
 
@@ -306,7 +320,7 @@ help::
 	@echo "       MCU=${MCU}"
 	@echo "       LFUSE=${LFUSE}"
 	@echo "       HFUSE=${HFUSE}"
-	@echo "       CLOCK=12000000"
+	@echo "       F_CPU=$(F_CPU)"
 	@echo "       ISP=${ISP}"
 	@echo "       PORT=${PORT}"
 	@echo "       HEXFILE=${HEXFILE}"
@@ -314,7 +328,7 @@ ifdef V
 	@echo "       V=${V} (verbose mode)"
 endif
 	@echo ""
-	@echo "All values above (other than CLOCK) can be overridden"
+	@echo "All values above can be overridden"
 	@echo "To override a value:"
 	@echo "    - 'make config' and mauually adapt/edit the $(CONFIGFILE) file."
 	@echo "    - or 'make config VALUENAME=value' to set value in $(CONFIGFILE)"

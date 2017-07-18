@@ -1,7 +1,9 @@
 *usbasp (v1.06)
 - added PDI support for ATXMega (patch by szulat@www.elektroda.pl 2012-08-16) modified RkamilC 2017-07-16
 - must be tested
-- http://www.elektroda.pl/rtvforum/topic2359783.html?sid=dc5bf363a1210ab871ceb3db697da6e7  
+- http://www.elektroda.pl/rtvforum/topic2359783.html?sid=dc5bf363a1210ab871ceb3db697da6e7
+-added ATTiny85 MCU as target modified from https://github.com/cpldcpu/USBasp-t 
+  
 
 usbasp (v1.06)
 - renaming of pre-built f/w images for consistency

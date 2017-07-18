@@ -16,13 +16,21 @@
 #define	uchar	unsigned char
 #endif
 
-#define	ISP_OUT   PORTB
-#define ISP_IN    PINB
-#define ISP_DDR   DDRB
+#define	ISP_OUT    PORTB
+#define ISP_IN     PINB
+#define ISP_DDR    DDRB
+
+#ifdef ATTINY
+#define ISP_RST    PB5
+#define ISP_MOSI   PB0
+#define ISP_MISO   PB1
+#define ISP_SCK    PB2
+#else
 #define ISP_RST   PB2
 #define ISP_MOSI  PB3
 #define ISP_MISO  PB4
 #define ISP_SCK   PB5
+#endif
 
 /* Prepare connection to target device */
 void ispConnect();
@@ -36,8 +44,10 @@ void ispSafeResetPulse(void);
 /* read an write a byte from isp using software (slow) */
 uchar ispTransmit_sw(uchar send_byte);
 
+#ifndef FORCE_SPI_SW
 /* read an write a byte from isp using hardware (fast) */
 uchar ispTransmit_hw(uchar send_byte);
+#endif
 
 /* enter programming mode */
 uchar ispEnterProgrammingMode();

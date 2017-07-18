@@ -15,23 +15,27 @@
 #include "clock.h"
 #include "usbasp.h"
 
-#define spiHWdisable() SPCR = 0
-
 uchar sck_sw_delay;
 uchar sck_spcr;
 uchar sck_spsr;
 uchar isp_hiaddr;
 
+#ifdef FORCE_ISP_SW
+#define spiHWdisable()
+#define spiHWenable()
+#else
+#define spiHWdisable() SPCR = 0
 void spiHWenable() {
-	SPCR = sck_spcr;
-	SPSR = sck_spsr;
+    SPCR = sck_spcr;
+    SPSR = sck_spsr;
 }
+#endif
 
 void ispSetSCKOption(uchar option) {
 
-	if (option == USBASP_ISP_SCK_AUTO)
-		return; /* We will do automatic clock probing later */
-
+//	if (option == USBASP_ISP_SCK_AUTO)
+//		return; /* We will do automatic clock probing later */
+#ifndef FORCE_ISP_SW
 	if (option >= USBASP_ISP_SCK_93_75) {
 		ispTransmit = ispTransmit_hw;
 		sck_spsr = 0;
@@ -64,6 +68,7 @@ void ispSetSCKOption(uchar option) {
 		}
 
 	} else {
+#endif
 		ispTransmit = ispTransmit_sw;
 		switch (option) {
 
@@ -95,8 +100,20 @@ void ispSetSCKOption(uchar option) {
 			sck_sw_delay = 192;
 
 			break;
+#ifdef FORCE_ISP_SW
+        case USBASP_ISP_SCK_93_75:
+            sck_sw_delay = 1;
+                
+            break;
+        default:
+            sck_sw_delay = 3;
+                
+            break;
+#endif
 		}
+#ifndef FORCE_ISP_SW
 	}
+#endif
 }
 
 void ispDelay() {
@@ -217,6 +234,7 @@ uchar ispTransmit_sw(uchar send_byte) {
 	return rec_byte;
 }
 
+#ifndef FORCE_ISP_SW
 uchar ispTransmit_hw(uchar send_byte) {
 	SPDR = send_byte;
 
@@ -224,14 +242,17 @@ uchar ispTransmit_hw(uchar send_byte) {
 		;
 	return SPDR;
 }
+#endif
 
 uchar ispEnterProgrammingMode() {
 	uchar check;
 	uchar count = 32;
 
+#ifndef FORCE_ISP_SW
 	if (ispTransmit == ispTransmit_hw) {
 		spiHWenable();
 	}
+#endif
 
 	while (count--) {
 		ispTransmit(0xAC);
@@ -255,10 +276,12 @@ uchar ispEnterProgrammingMode() {
 		ISP_OUT &= ~(1 << ISP_SCK); /* SCK low */
 		ispDelay();
 
+#ifndef FORCE_ISP_SW
 		if (ispTransmit == ispTransmit_hw) {
 			spiHWenable();
 		}
-
+#endif
+        
 	}
 	spiHWdisable();
 	return 1; /* error: device dosn't answer */
@@ -327,7 +350,6 @@ uchar ispWriteFlash(unsigned long address, uchar data, uchar pollmode) {
 				starttime = TIMERVALUE;
 				retries--;
 			}
-
 		}
 		return 1; /* error */
 	}
@@ -361,7 +383,6 @@ uchar ispFlushPage(unsigned long address, uchar pollvalue) {
 				starttime = TIMERVALUE;
 				retries--;
 			}
-
 		}
 
 		return 1; /* error */

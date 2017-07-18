@@ -15,12 +15,7 @@
 #include "usbconfig.h"
 #include <string.h>
 #include "xmega_pdi.h"
-#include <util/delay.h>
-
-//#ifndef F_CPU
-//#define F_CPU (USB_CFG_CLOCK_KHZ*1000)
-#define F_CPU 12000000
-//#endif
+//#include <util/delay.h>
 
 uchar pdi_nvmbusy=0;
 
