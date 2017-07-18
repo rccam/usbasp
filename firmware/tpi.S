@@ -19,7 +19,6 @@
 #define TPI_DATAIN_PIN PINB
 #define TPI_DATAIN_DDR DDRB
 #ifdef ATTINY
-    #undef TPI_WITH_OPTO
     #define TPI_DATAOUT_BIT 0
     #define TPI_CLK_BIT 2
 #else
@@ -27,7 +26,11 @@
     #define TPI_CLK_BIT 5
 #endif
 #ifdef TPI_WITH_OPTO
+#ifdef ATTINY
+    #define TPI_DATAIN_BIT 1
+#else
     #define TPI_DATAIN_BIT 4
+#endif
 #else
     #define TPI_DATAIN_BIT TPI_DATAOUT_BIT
 #endif
