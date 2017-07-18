@@ -163,7 +163,7 @@ REV := v$(USBASP_FWREV_MAJ).$(USBASP_FWREV_MIN)
 CFLAGS_atmega8  := -mmcu=atmega8
 CFLAGS_atmega88 := -mmcu=atmega88
 CFLAGS_atmega48 := -mmcu=atmega48 -DUSBASP_CFG_DISABLE_TPI
-CFLAGS_attiny85 := -mmcu=attiny85 -DWITHOUT_LED -DATTINY -DCALIB_RC -DFORCE_ISP_SW
+CFLAGS_attiny85 := -mmcu=attiny85 -DWITHOUT_LED -DATTINY -DCALIB_RC -DFORCE_ISP_SW -DUSBASP_CFG_DISABLE_PDI
 
 
 # get date in YYYY-MM-DD format.
