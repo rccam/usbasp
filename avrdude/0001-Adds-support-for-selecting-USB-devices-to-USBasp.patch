@@ -1,0 +1,232 @@
+From 9cff08fb3243d2205d281ac5cacf902749ec29ab Mon Sep 17 00:00:00 2001
+From: Jon Thacker <thacker.jon@gmail.com>
+Date: Thu, 9 Feb 2017 10:34:38 -0600
+Subject: [PATCH] Adds support for selecting USB devices to USBasp
+
+The documentation for USBasp indicates that it supports -p usb:bus:dev
+style USB device selection, however this is not actually supported. This
+commit adds support for this in the same style as USBTiny.
+If a dev is not included (e.g. -p usb:xxx), then it will print all the
+devices that match one of the vendor and product IDs supported by the
+USBasp protocol.
+---
+ avrdude/usbasp.c | 129 +++++++++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 120 insertions(+), 9 deletions(-)
+
+diff --git a/avrdude/usbasp.c b/avrdude/usbasp.c
+index e75eed1..2b9ea3f 100644
+--- a/avrdude/usbasp.c
++++ b/avrdude/usbasp.c
+@@ -136,9 +136,9 @@ static int usbasp_transmit(PROGRAMMER * pgm, unsigned char receive,
+ 			   unsigned char functionid, const unsigned char *send,
+ 			   unsigned char *buffer, int buffersize);
+ #ifdef USE_LIBUSB_1_0
+-static int usbOpenDevice(libusb_device_handle **device, int vendor, char *vendorName, int product, char *productName);
++static int usbOpenDevice(libusb_device_handle **device, int vendor, char *vendorName, int product, char *productName, char* bus_name, char* devname);
+ #else
+-static int usbOpenDevice(usb_dev_handle **device, int vendor, char *vendorName, int product, char *productName);
++static int usbOpenDevice(usb_dev_handle **device, int vendor, char *vendorName, int product, char *productName, char* bus_name, char* dev_name);
+ #endif
+ // interface - prog.
+ static int usbasp_open(PROGRAMMER * pgm, char * port);
+@@ -288,19 +288,40 @@ static int usbasp_transmit(PROGRAMMER * pgm,
+  */
+ #ifdef USE_LIBUSB_1_0
+ static int usbOpenDevice(libusb_device_handle **device, int vendor,
+-			 char *vendorName, int product, char *productName)
++			 char *vendorName, int product, char *productName, char* bus_name, char* dev_name)
+ {
+     libusb_device_handle *handle = NULL;
+     int                  errorCode = USB_ERROR_NOTFOUND;
+     static int           didUsbInit = 0;
+     int j;
+     int r;
++    char* endptr;
++    long bus_id;
++    long dev_id;
++
++    if (bus_name != NULL) {
++        errno = 0;
++        bus_id = strtol(bus_name, &endptr, 10);
++        if (errno != 0) {
++            avrdude_message(MSG_INFO, "%s: Invalid bus %s", progname, bus_name);
++            return errorCode;
++        }
++    }
++
++    if (dev_name != NULL) {
++        errno = 0;
++        dev_id = strtol(dev_name, &endptr, 10);
++        if (errno != 0) {
++            avrdude_message(MSG_INFO, "%s: Invalid bus %s", progname, dev_name);
++            return errorCode;
++        }
++    }
+ 
+     if(!didUsbInit){
+         didUsbInit = 1;
+         libusb_init(&ctx);
+     }
+-    
++
+     libusb_device **dev_list;
+     int dev_list_len = libusb_get_device_list(ctx, &dev_list);
+ 
+@@ -309,6 +330,10 @@ static int usbOpenDevice(libusb_device_handle **device, int vendor,
+         struct libusb_device_descriptor descriptor;
+ 	libusb_get_device_descriptor(dev, &descriptor);
+ 	if (descriptor.idVendor == vendor && descriptor.idProduct == product) {
++            if ((bus_name != NULL && dev_name != NULL) &&
++                (bus_id != libusb_get_bus_number(dev) || dev_id != libusb_get_device_address(dev))) {
++                continue;
++            }
+             char    string[256];
+ 	    /* we need to open the device in order to query strings */
+             r = libusb_open(dev, &handle);
+@@ -363,7 +388,7 @@ static int usbOpenDevice(libusb_device_handle **device, int vendor,
+ }
+ #else
+ static int usbOpenDevice(usb_dev_handle **device, int vendor,
+-			 char *vendorName, int product, char *productName)
++			 char *vendorName, int product, char *productName, char* bus_name, char* dev_name)
+ {
+ struct usb_bus       *bus;
+ struct usb_device    *dev;
+@@ -380,7 +405,11 @@ static int           didUsbInit = 0;
+     for(bus=usb_get_busses(); bus; bus=bus->next){
+         for(dev=bus->devices; dev; dev=dev->next){
+             if(dev->descriptor.idVendor == vendor &&
+-	       dev->descriptor.idProduct == product){
++                    dev->descriptor.idProduct == product){
++                if ((bus_name != NULL && dev_name != NULL) &&
++                    (strcmp(bus->dirname, bus_name) != 0 || strcmp(dev->filename, dev_name) != 0)) {
++                    continue;
++                }
+                 char    string[256];
+                 int     len;
+ 		/* we need to open the device in order to query strings */
+@@ -441,12 +470,85 @@ static int           didUsbInit = 0;
+ #endif
+ 
+ 
++static bool _vid_pid_match(int idVendor, int idProduct, int vid, int pid) {
++    return ((idVendor == vid && idProduct == pid)
++            || (idVendor == USBASP_SHARED_VID && idProduct == USBASP_SHARED_PID)
++            || (idVendor == USBASP_NIBOBEE_VID && idProduct == USBASP_NIBOBEE_PID)
++            || (idVendor == USBASP_OLD_VID && idProduct == USBASP_OLD_PID));
++}
++
++
++static void print_all_options(int vid, int pid) {
++#ifdef USE_LIBUSB_1_0
++    int j;
++    uint8_t bus_number;
++    uint8_t dev_addr;
++    libusb_context *ctx = NULL;
++    libusb_init(&ctx);
++
++    libusb_device **dev_list;
++    struct libusb_device_descriptor desc;
++    int dev_list_len = libusb_get_device_list(ctx, &dev_list);
++    for (j=0; j<dev_list_len; ++j) {
++        libusb_device *dev = dev_list[j];
++        libusb_get_device_descriptor(dev, &desc);
++        if (_vid_pid_match(desc.idVendor, desc.idProduct, vid, pid)) {
++            bus_number = libusb_get_bus_number(dev);
++            dev_addr = libusb_get_device_address(dev);
++            avrdude_message(MSG_NOTICE, " option for vid:0x%x pid:0x%x is -P usb:%03d:%03d (bus:device)\n",
++                            vid, pid, bus_number, dev_addr);
++
++        }
++    }
++    libusb_exit(ctx);
++
++#else
++    struct usb_bus      *bus;
++    struct usb_device   *dev = 0;
++
++    usb_init();                    // initialize the libusb system
++    usb_find_busses();             // have libusb scan all the usb busses available
++    usb_find_devices();            // have libusb scan all the usb devices available
++    struct usb_device_descriptor desc;
++
++    // now we iterate through all the busses and devices
++    for (bus = usb_busses; bus; bus = bus->next) {
++        for (dev = bus->devices; dev; dev = dev->next) {
++            desc = dev->descriptor;
++            if (_vid_pid_match(desc.idVendor, desc.idProduct, vid, pid)) {
++                avrdude_message(MSG_NOTICE, " option for vid:%d pid:%d is -P usb:%s:%s (bus:device)\n",
++                        vid, pid, bus->dirname, dev->filename);
++            }
++        }
++    }
++#endif
++}
++
++
+ /* Interface - prog. */
+ static int usbasp_open(PROGRAMMER * pgm, char * port)
+ {
++  char *bus_name = NULL;
++  char *dev_name = NULL;
++
++  // if no -P was given or '-P usb' was given
++  if (strcmp(port, "usb") == 0) {
++    port = NULL;
++  } else {
++    // calculate bus and device names from -P option
++    const size_t usb_len = strlen("usb");
++    if(strncmp(port, "usb", usb_len) == 0 && ':' == port[usb_len]) {
++        bus_name = port + usb_len + 1;
++        dev_name = strchr(bus_name, ':');
++        if (dev_name != NULL)
++          *dev_name++ = '\0';
++    }
++  }
++
+   avrdude_message(MSG_DEBUG, "%s: usbasp_open(\"%s\")\n",
+ 	    progname, port);
+ 
++
+   /* usb_init will be done in usbOpenDevice */
+   LNODEID usbpid = lfirst(pgm->usbpid);
+   int pid, vid;
+@@ -459,7 +561,16 @@ static int usbasp_open(PROGRAMMER * pgm, char * port)
+     pid = USBASP_SHARED_PID;
+   }
+   vid = pgm->usbvid? pgm->usbvid: USBASP_SHARED_VID;
+-  if (usbOpenDevice(&PDATA(pgm)->usbhandle, vid, pgm->usbvendor, pid, pgm->usbproduct) != 0) {
++
++  // invalid dev_name, display all the options
++  if (bus_name != NULL && dev_name == NULL) {
++      avrdude_message(MSG_INFO, "%s: Error: Invalid -P value: '%s'\n", progname, port);
++      avrdude_message(MSG_INFO, "%sUse -P usb:bus:device\n", progbuf);
++      print_all_options(vid, pid);
++      return -1;
++  }
++
++  if (usbOpenDevice(&PDATA(pgm)->usbhandle, vid, pgm->usbvendor, pid, pgm->usbproduct, bus_name, dev_name) != 0) {
+     /* try alternatives */
+     if(strcasecmp(ldata(lfirst(pgm->id)), "usbasp") == 0) {
+     /* for id usbasp autodetect some variants */
+@@ -468,7 +579,7 @@ static int usbasp_open(PROGRAMMER * pgm, char * port)
+ 	        "use \"-C nibobee\" instead.\n",
+ 	        progname);
+         if (usbOpenDevice(&PDATA(pgm)->usbhandle, USBASP_NIBOBEE_VID, "www.nicai-systems.com",
+-		        USBASP_NIBOBEE_PID, "NIBObee") != 0) {
++		        USBASP_NIBOBEE_PID, "NIBObee", bus_name, dev_name) != 0) {
+           avrdude_message(MSG_INFO, "%s: error: could not find USB device "
+                           "\"NIBObee\" with vid=0x%x pid=0x%x\n",
+                           progname, USBASP_NIBOBEE_VID, USBASP_NIBOBEE_PID);
+@@ -478,7 +589,7 @@ static int usbasp_open(PROGRAMMER * pgm, char * port)
+       }
+       /* check if device with old VID/PID is available */
+       if (usbOpenDevice(&PDATA(pgm)->usbhandle, USBASP_OLD_VID, "www.fischl.de",
+-		             USBASP_OLD_PID, "USBasp") == 0) {
++		             USBASP_OLD_PID, "USBasp", bus_name, dev_name) == 0) {
+         /* found USBasp with old IDs */
+         avrdude_message(MSG_INFO, "%s: Warning: Found USB device \"USBasp\" with "
+                         "old VID/PID! Please update firmware of USBasp!\n",
+-- 
+2.11.0
+
