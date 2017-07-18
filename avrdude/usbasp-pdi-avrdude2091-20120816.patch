@@ -546,10 +546,10 @@ diff '--exclude=.svn' -ur ./usbasp.h ../../../avrdude/usbasp.h
  #define USBASP_FUNC_TPI_WRITEBLOCK   16
  #define USBASP_FUNC_GETCAPABILITIES 127
  
-+#define USBASP_FUNC_PDI_CONNECT    17
-+#define USBASP_FUNC_PDI_DISCONNECT 18
-+#define USBASP_FUNC_PDI_READ       19
-+#define USBASP_FUNC_PDI_SEND       20
++#define USBASP_FUNC_PDI_CONNECT    21
++#define USBASP_FUNC_PDI_DISCONNECT 22
++#define USBASP_FUNC_PDI_READ       23
++#define USBASP_FUNC_PDI_SEND       24
 +
  /* USBASP capabilities */
  #define USBASP_CAP_TPI    0x01
