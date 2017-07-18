@@ -612,7 +612,7 @@ int main(void) {
 	 *
 	 * WARNING:
 	 * The code below will flash the red LED unless USB_LEDSTATUS is disabled by
-	 * defining USB_CFG_DISABLE_USB_LEDSTATUS
+	 * defining USBASP_CFG_DISABLE_USB_LEDSTATUS
 	 * h/w that uses the red led output signal for controlling an outut buffer may
 	 * have issues with this since this flash will momentarily enable the output buffer.
 	 */
