@@ -35,6 +35,20 @@
 #define USBASP_FUNC_PDI_SEND         24
 #define USBASP_FUNC_GETCAPABILITIES 127
 
+/* EMK Modifications for DEBUG serial interface */
+#define USBASP_FUNC_UART_PUTBYTE      50
+#define USBASP_FUNC_UART_GETBYTE      51
+#define USBASP_FUNC_UART_GETBYTECOUNT 52
+#define USBASP_FUNC_UART_SETBAUDRATE  53
+
+#define USBASP_FUNC_TEST_CMD1         61
+#define USBASP_FUNC_TEST_CMD2         62
+#define USBASP_FUNC_TEST_CMD3         63
+
+/* UART Baud Rate */
+#define BAUD_RATE 9600
+/* [END]EMK Modifications for DEBUG serial interface */
+
 /* USBASP capabilities */
 #define USBASP_CAP_0_TPI    0x01
 #define USBASP_CAP_0_PDI    0x02

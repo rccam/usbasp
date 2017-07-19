@@ -27,6 +27,7 @@
 #include "tpi.h"
 #include "tpi_defs.h"
 #include "pdi.h"
+#include "uart.h"
 
 static uchar replyBuffer[8];
 
@@ -42,6 +43,10 @@ static uchar prog_pagecounter;
 #ifndef USBASP_CFG_DISABLE_PDI
 static uchar prog_buf[128]; //PDI
 static uchar prog_buf_pos;  //PDI
+#endif
+#ifdef USE_USBASP_TTY
+static uchar debug_byte='X';
+static unsigned long baud = BAUD_RATE;
 #endif
 
 /* Array of clock speeds to try during auto probing */
@@ -98,6 +103,9 @@ uchar i;
 uchar usbFunctionSetup(uchar data[8]) {
 
 	uchar len = 0;
+#ifdef USE_USBASP_TTY
+    uchar i;
+#endif
 
 	if (data[1] == USBASP_FUNC_CONNECT) {
 #ifndef ATTINY
@@ -295,10 +303,50 @@ uchar usbFunctionSetup(uchar data[8]) {
         prog_nbytes = (data[7] << 8) | data[6];
         prog_state = PROG_STATE_PDI_READ;
         len = 0xff;
-        
 #endif
-	
-	} else if (data[1] == USBASP_FUNC_GETCAPABILITIES) {
+#ifdef USE_USBASP_TTY // ****** EMK Modifications for DEBUG serial interface ******
+    } else if (data[1] == USBASP_FUNC_UART_GETBYTE ) {
+        // Get a byte From UART outBuf (if any) send to HOST ***
+        
+        if(UART_outbufsize()>0)
+            replyBuffer[0] = UART_outBuf_get();  //Get a byte from the outBuf buffer
+        else
+            replyBuffer[0]=0;     //Nothing to send, send NULL byte
+        
+        len = 1;
+        
+    } else if (data[1] == USBASP_FUNC_UART_PUTBYTE ) {
+        // Get Data From HOST to be sent to UART ***
+        debug_byte= data[2];         //Save byte to debug_byte
+        PORTC &=0xFC;                //Clear Low 2 bits
+        PORTC |= ~debug_byte & 0x03; //Show Low 2 bits in LEDs
+        UART_inBuf_put(debug_byte);  //Save in inBuf for sending to UART
+        
+    } else if (data[1] == USBASP_FUNC_UART_GETBYTECOUNT ) {
+        // Get #of bytes from UART waiting to be sent to HOST ***
+        replyBuffer[0] = UART_outbufsize();  //Get #of bytes in outBuf buffer
+        len = 1;
+        
+    } else if (data[1] == USBASP_FUNC_UART_SETBAUDRATE) {
+        // Set UART Baud Rate (53)
+        baud = *((unsigned long*) &data[2]);
+        UART_init(baud);
+        replyBuffer[0] = 0x53;  //Return Code = Command in Hex
+        len = 1;
+        
+    } else if (data[1] == USBASP_FUNC_TEST_CMD1) {
+        // Just For Demonstration...
+        PORTC |= 0x03;        //Both LEDs OFF
+        for(i=0; i<10; i++)   //Make the LEDs blink for  816ms
+        {
+            clockWait(255);   //320us * 255 = 81.6ms
+            PORTC++;
+        }
+        PORTC=0xFC;                   //Restore the state of the LEDs
+        replyBuffer[0] = debug_byte;  //Just return last byte sent from Host
+        len = 1;
+#endif // **** [END] EMK Modifications for DEBUG serial interface ******
+    } else if (data[1] == USBASP_FUNC_GETCAPABILITIES) {
 #ifndef USBASP_CFG_DISABLE_TPI
 		replyBuffer[0] = USBASP_CAP_0_TPI;
 #else
@@ -591,7 +639,10 @@ int main(void) {
 #ifdef USBASP_CFG_DISABLE_USB_LEDSTATUS
 	ledGreenOn();
 #endif
-	
+#ifdef USE_USBASP_TTY
+    /* init UART */
+    UART_init(baud);
+#endif
 	/* init timer */
 	clockInit();
 
@@ -636,6 +687,9 @@ int main(void) {
 	/* main event loop */
 	for (;;) {
 		usbPoll();
+#ifdef USE_USBASP_TTY
+        UART_poll();
+#endif
 	}
 	return 0;
 }
